@@ -865,6 +865,46 @@ public class LocalFolder extends Folder<LocalMessage> implements Serializable {
         }
     }
 
+    public Map<String,Date> getMessageEffectiveDates() throws MessagingException {
+        try {
+            return  localStore.database.execute(false, new DbCallback<Map<String, Date>>() {
+                @Override
+                public Map<String, Date> doDbWork(final SQLiteDatabase db) throws WrappedException, UnavailableStorageException {
+                    Cursor cursor = null;
+                    HashMap<String, Date> result = new HashMap<>();
+
+                    try {
+                        open(OPEN_MODE_RO);
+
+                        cursor = db.rawQuery(
+                                "SELECT uid, date, internal_date " +
+                                        "FROM messages " +
+                                        "WHERE empty = 0 AND deleted = 0 AND " +
+                                        "folder_id = ? ORDER BY date DESC",
+                                new String[] { Long.toString(mFolderId) });
+
+                        while (cursor.moveToNext()) {
+                            String uid = cursor.getString(0);
+                            // FIXME this date handling is duplicated from Message.populateFromGetMessageCursor, but it is incorrect!
+                            Date sentDate = new Date(cursor.getLong(1));
+                            Date internalSentDate = new Date(cursor.getLong(2));
+                            Date effectiveDate = sentDate != null ? sentDate : internalSentDate;
+                            result.put(uid, effectiveDate);
+                        }
+                    } catch (MessagingException e) {
+                        throw new WrappedException(e);
+                    } finally {
+                        Utility.closeQuietly(cursor);
+                    }
+
+                    return result;
+                }
+            });
+        } catch (WrappedException e) {
+            throw(MessagingException) e.getCause();
+        }
+    }
+
     public List<LocalMessage> getMessages(MessageRetrievalListener<LocalMessage> listener) throws MessagingException {
         return getMessages(listener, true);
     }
